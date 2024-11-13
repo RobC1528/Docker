@@ -1,0 +1,72 @@
+---
+- hosts: all
+  become: true
+  tasks:
+    # Install Docker on Ubuntu
+    - name: Add Docker GPG Key (Ubuntu)
+      apt_key:
+        url: https://download.docker.com/linux/ubuntu/gpg
+        state: present
+      when: ansible_distribution == "Ubuntu"
+
+    - name: Add Docker to APT repository (Ubuntu)
+      apt_repository:
+        repo: "deb [arch=amd64] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"
+        state: present
+      when: ansible_distribution == "Ubuntu"
+
+    - name: Install Docker Pre-requisites (Ubuntu)
+      apt:
+        name:
+          - apt-transport-https
+          - ca-certificates
+          - curl
+          - software-properties-common
+          - python3-pip
+          - virtualenv
+          - python3-setuptools
+        state: latest
+      when: ansible_distribution == "Ubuntu"
+
+    - name: Install Docker
+      package:
+        name: docker-ce
+        state: latest
+
+    - name: Start Docker Service
+      service:
+        name: docker
+        state: started
+
+    # Create Dockerfile
+    - name: Create directory for Dockerfile
+      file:
+        path: /tmp/web_db_docker
+        state: directory
+
+    - name: Copy Dockerfile
+      copy:
+        dest: /tmp/web_db_docker/Dockerfile
+        content: |
+          FROM ubuntu:latest
+          RUN apt-get update && \
+              apt-get install -y apache2 mysql-server && \
+              apt-get clean
+          RUN echo "Hello from your web server!" > /var/www/html/index.html
+          EXPOSE 80 3306
+          CMD service apache2 start && service mysql start && tail -f /dev/null
+
+    # Build and run the Docker container
+    - name: Build Docker image
+      community.docker.docker_image:
+        name: web_db_server
+        build:
+          path: /tmp/web_db_docker
+
+    - name: Run Docker container
+      community.docker.docker_container:
+        name: web_db_container
+        image: web_db_server
+        ports:
+          - "80:80"
+          - "3306:3306"
